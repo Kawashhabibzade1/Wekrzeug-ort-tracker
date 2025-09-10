@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Werkzeug-Ort-Tracker</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #status { margin: 15px 0; font-weight: bold; }
+    table { margin-top: 20px; border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
+    th { background: #eee; }
+    button { margin-top: 10px; padding: 6px 12px; }
+  </style>
+</head>
+<body>
+  <h2>🔧 Werkzeug-Ort-Zuweisung</h2>
+
+  <div id="qr-reader" style="width:300px;"></div>
+  <div id="status">📷 Bitte scannen Sie zuerst einen <strong>Ort</strong>.</div>
+
+  <button onclick="downloadLog()">📁 Log speichern (CSV)</button>
+  
+  <table id="logTable">
+    <thead>
+      <tr><th>Ort</th><th>Werkzeug</th><th>Zeit</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    let currentLocation = null;
+    let scanLog = [];
+    let lastScanned = "";
+
+    // === Status-Anzeige ===
+    function updateStatus(message) {
+      document.getElementById("status").innerText = message;
+    }
+
+    // === Tabellen-Log ===
+    function logEntry(entry) {
+      const tbody = document.querySelector("#logTable tbody");
+      const row = document.createElement("tr");
+      row.innerHTML = `<td>${entry.ort}</td><td>${entry.werkzeug}</td><td>${entry.zeit}</td>`;
+      tbody.appendChild(row);
+    }
+
+    // === LocalStorage speichern ===
+    function saveToLocal() {
+      localStorage.setItem("scanLog", JSON.stringify(scanLog));
+    }
+
+    function loadFromLocal() {
+      const data = localStorage.getItem("scanLog");
+      if (data) {
+        scanLog = JSON.parse(data);
+        scanLog.forEach(entry => logEntry(entry));
+      }
+    }
+
+    // === Erkennung Codes ===
+    function isLocationCode(code) {
+      return code.startsWith("LOC_");
+    }
+
+    function isToolCode(code) {
+      return code.startsWith("TOOL_");
+    }
+
+    // === QR-Code Erfolg ===
+    function handleScanSuccess(code) {
+      if (code === lastScanned) return; // Doppel-Scan verhindern
+      lastScanned = code;
+      setTimeout(() => lastScanned = "", 2000);
+
+      if (isLocationCode(code)) {
+        currentLocation = code;
+        updateStatus(`📍 Ort erkannt: ${code}. Jetzt Werkzeug scannen.`);
+      } else if (isToolCode(code)) {
+        if (!currentLocation) {
+          updateStatus("⚠️ Bitte zuerst einen Ort scannen.");
+          return;
+        }
+
+        const timestamp = new Date().toISOString();
+        const entry = { ort: currentLocation, werkzeug: code, zeit: timestamp };
+        scanLog.push(entry);
+        logEntry(entry);
+        saveToLocal();
+
+        updateStatus("✅ Werkzeug gespeichert. Bitte nächsten Ort scannen.");
+        currentLocation = null;
+      } else {
+        updateStatus("❓ Unbekannter QR-Code: " + code);
+      }
+    }
+
+    // === CSV-Export ===
+    function downloadLog() {
+      if (scanLog.length === 0) {
+        alert("Noch keine Einträge vorhanden.");
+        return;
+      }
+
+      let csv = "Ort,Werkzeug,Zeit\n";
+      scanLog.forEach(entry => {
+        csv += `${entry.ort},${entry.werkzeug},${entry.zeit}\n`;
+      });
+
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "werkzeug_log.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+
+      alert("✅ CSV-Datei gespeichert!");
+    }
+
+    // === QR-Scanner starten ===
+    const qrScanner = new Html5Qrcode("qr-reader");
+    qrScanner.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: 250 },
+      handleScanSuccess
+    ).catch(err => {
+      console.error(err);
+      updateStatus("❌ Fehler beim Starten der Kamera: " + err);
+    });
+
+    // === Alte Logs laden ===
+    loadFromLocal();
+  </script>
+</body>
+</html>
